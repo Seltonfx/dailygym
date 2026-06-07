@@ -18,7 +18,6 @@ export default function RegisterScreen({ navigation }) {
   const [submitting, setSubmitting] = useState(false);
 
   async function handleRegister() {
-    Alert.alert("Teste", "handleRegister foi chamado");
     if (!name.trim() || !email.trim() || !password) {
       Alert.alert("Atenção", "Preencha nome, email e senha.");
       return;

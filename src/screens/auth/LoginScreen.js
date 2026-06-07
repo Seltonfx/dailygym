@@ -74,7 +74,6 @@ export default function LoginScreen({ navigation }) {
 
         <TouchableOpacity
           onPress={() => {
-            Alert.alert("Teste", "Clique detectado");
             navigation.navigate("Register");
           }}
         >
