@@ -1,6 +1,5 @@
 import { useState } from "react";
 import {
-  Alert,
   SafeAreaView,
   StyleSheet,
   Text,
@@ -16,26 +15,45 @@ export default function RegisterScreen({ navigation }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [message, setMessage] = useState("");
 
   async function handleRegister() {
-    if (!name.trim() || !email.trim() || !password) {
-      Alert.alert("Atenção", "Preencha nome, email e senha.");
+    setMessage("Botão clicado...");
+
+    const nomeLimpo = name.trim();
+    const emailLimpo = email.trim();
+
+    if (!nomeLimpo || !emailLimpo || !password) {
+      setMessage("Preencha nome, email e senha.");
       return;
     }
 
     if (password.length < 6) {
-      Alert.alert("Atenção", "A senha deve ter pelo menos 6 caracteres.");
+      setMessage("A senha deve ter pelo menos 6 caracteres.");
       return;
     }
 
     try {
       setSubmitting(true);
-      await register(name, email, password);
+      setMessage("Criando conta...");
+
+      await register(nomeLimpo, emailLimpo, password);
+
+      setMessage("Conta criada com sucesso!");
     } catch (error) {
-      Alert.alert(
-        "Erro ao criar conta",
-        error?.message || "Não foi possível criar a conta.",
-      );
+      console.log("ERRO AO CRIAR CONTA:", error);
+
+      if (error?.code === "auth/email-already-in-use") {
+        setMessage("Este email já está cadastrado. Tente fazer login.");
+      } else if (error?.code === "auth/invalid-email") {
+        setMessage("Email inválido.");
+      } else if (error?.code === "auth/weak-password") {
+        setMessage("Senha muito fraca.");
+      } else if (error?.code === "auth/network-request-failed") {
+        setMessage("Falha de conexão. Verifique sua internet.");
+      } else {
+        setMessage(error?.message || "Não foi possível criar a conta.");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -77,7 +95,7 @@ export default function RegisterScreen({ navigation }) {
         />
 
         <TouchableOpacity
-          style={styles.button}
+          style={[styles.button, submitting && styles.buttonDisabled]}
           onPress={handleRegister}
           disabled={submitting}
         >
@@ -85,6 +103,8 @@ export default function RegisterScreen({ navigation }) {
             {submitting ? "Criando..." : "Criar conta"}
           </Text>
         </TouchableOpacity>
+
+        {message ? <Text style={styles.message}>{message}</Text> : null}
 
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={styles.link}>Já tenho conta</Text>
@@ -115,11 +135,20 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     marginTop: 8,
   },
+  buttonDisabled: {
+    opacity: 0.6,
+  },
   buttonText: {
     color: "#fff",
     textAlign: "center",
     fontWeight: "800",
     fontSize: 16,
+  },
+  message: {
+    color: "#facc15",
+    textAlign: "center",
+    marginTop: 14,
+    fontWeight: "700",
   },
   link: {
     color: "#60a5fa",

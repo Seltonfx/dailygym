@@ -22,17 +22,6 @@ import { useAuth } from "./AuthContext";
 
 const AppDataContext = createContext(null);
 
-const STORAGE_KEYS = {
-  treinos: "dailygym_treinos",
-  historico: "dailygym_historico",
-  perfil: "dailygym_perfil",
-  evolucaoCarga: "dailygym_evolucao_carga",
-  treinoEmAndamento: "dailygym_treino_em_andamento",
-  streak: "dailygym_streak",
-  lembreteAtivo: "dailygym_lembrete_ativo",
-  lembreteId: "dailygym_lembrete_id",
-};
-
 const initialProfile = {
   nome: "",
   peso: "",
@@ -41,6 +30,32 @@ const initialProfile = {
   nivel: "",
   metaSemanal: "",
 };
+
+const initialState = {
+  treinos: [],
+  historico: [],
+  perfil: initialProfile,
+  evolucaoCarga: {},
+  treinoEmAndamento: null,
+  streak: 0,
+  lembreteAtivo: false,
+  lembreteId: null,
+};
+
+function getUserStorageKeys(uid) {
+  const base = uid ? `dailygym_${uid}` : "dailygym_guest";
+
+  return {
+    treinos: `${base}_treinos`,
+    historico: `${base}_historico`,
+    perfil: `${base}_perfil`,
+    evolucaoCarga: `${base}_evolucao_carga`,
+    treinoEmAndamento: `${base}_treino_em_andamento`,
+    streak: `${base}_streak`,
+    lembreteAtivo: `${base}_lembrete_ativo`,
+    lembreteId: `${base}_lembrete_id`,
+  };
+}
 
 function parseJsonSafe(value, fallback) {
   try {
@@ -56,6 +71,7 @@ function createId() {
 
 function normalizeWorkouts(list) {
   if (!Array.isArray(list)) return [];
+
   return list.map((workout) => ({
     id: workout?.id || createId(),
     nome: workout?.nome || "Treino",
@@ -73,6 +89,7 @@ function normalizeWorkouts(list) {
           if (typeof item === "string") {
             return { id: createId(), nome: item, tempo: "", carga: "" };
           }
+
           return {
             id: item?.id || createId(),
             nome: item?.nome || "",
@@ -86,6 +103,7 @@ function normalizeWorkouts(list) {
 
 function normalizeHistory(list) {
   if (!Array.isArray(list)) return [];
+
   return list.map((item) => ({
     id: item?.id || createId(),
     nome: item?.nome || "Treino",
@@ -104,74 +122,75 @@ function normalizeHistory(list) {
   }));
 }
 
+function buildStateFromStorageMap(map, keys) {
+  return {
+    treinos: normalizeWorkouts(parseJsonSafe(map[keys.treinos], [])),
+    historico: normalizeHistory(parseJsonSafe(map[keys.historico], [])),
+    perfil: parseJsonSafe(map[keys.perfil], initialProfile),
+    evolucaoCarga: parseJsonSafe(map[keys.evolucaoCarga], {}),
+    treinoEmAndamento: parseJsonSafe(map[keys.treinoEmAndamento], null),
+    streak: Number(parseJsonSafe(map[keys.streak], 0)) || 0,
+    lembreteAtivo: Boolean(parseJsonSafe(map[keys.lembreteAtivo], false)),
+    lembreteId: parseJsonSafe(map[keys.lembreteId], null),
+  };
+}
+
+function buildStateFromCloud(cloudData) {
+  return {
+    treinos: normalizeWorkouts(cloudData?.treinos || []),
+    historico: normalizeHistory(cloudData?.historico || []),
+    perfil: cloudData?.perfil || initialProfile,
+    evolucaoCarga: cloudData?.evolucaoCarga || {},
+    treinoEmAndamento: cloudData?.treinoEmAndamento || null,
+    streak: Number(cloudData?.streak) || 0,
+    lembreteAtivo: Boolean(cloudData?.lembreteAtivo),
+    lembreteId: cloudData?.lembreteId || null,
+  };
+}
+
 export function AppDataProvider({ children }) {
   const { user } = useAuth();
+
   const [dataLoading, setDataLoading] = useState(true);
   const [syncingCloud, setSyncingCloud] = useState(false);
 
-  const [treinos, setTreinos] = useState([]);
-  const [historico, setHistorico] = useState([]);
-  const [evolucaoCarga, setEvolucaoCarga] = useState({});
-  const [treinoEmAndamento, setTreinoEmAndamento] = useState(null);
-  const [streak, setStreak] = useState(0);
-  const [lembreteAtivo, setLembreteAtivo] = useState(false);
-  const [lembreteId, setLembreteId] = useState(null);
-  const [perfil, setPerfil] = useState(initialProfile);
+  const [treinos, setTreinos] = useState(initialState.treinos);
+  const [historico, setHistorico] = useState(initialState.historico);
+  const [perfil, setPerfil] = useState(initialState.perfil);
+  const [evolucaoCarga, setEvolucaoCarga] = useState(
+    initialState.evolucaoCarga,
+  );
+  const [treinoEmAndamento, setTreinoEmAndamento] = useState(
+    initialState.treinoEmAndamento,
+  );
+  const [streak, setStreak] = useState(initialState.streak);
+  const [lembreteAtivo, setLembreteAtivo] = useState(
+    initialState.lembreteAtivo,
+  );
+  const [lembreteId, setLembreteId] = useState(initialState.lembreteId);
 
   const cloudTimerRef = useRef(null);
   const hydratedRef = useRef(false);
+  const activeUidRef = useRef(null);
 
-  useEffect(() => {
-    loadLocalData();
-  }, []);
+  const storageKeys = useMemo(() => getUserStorageKeys(user?.uid), [user?.uid]);
 
-  useEffect(() => {
-    if (!hydratedRef.current || !user?.uid) return;
-    scheduleCloudSync();
-
-    return () => {
-      if (cloudTimerRef.current) clearTimeout(cloudTimerRef.current);
-    };
-  }, [
-    user?.uid,
-    treinos,
-    historico,
-    evolucaoCarga,
-    treinoEmAndamento,
-    streak,
-    lembreteAtivo,
-    lembreteId,
-    perfil,
-  ]);
-
-  async function loadLocalData() {
-    try {
-      const results = await AsyncStorage.multiGet(Object.values(STORAGE_KEYS));
-      const map = Object.fromEntries(results);
-
-      setTreinos(
-        normalizeWorkouts(parseJsonSafe(map[STORAGE_KEYS.treinos], [])),
-      );
-      setHistorico(
-        normalizeHistory(parseJsonSafe(map[STORAGE_KEYS.historico], [])),
-      );
-      setPerfil(parseJsonSafe(map[STORAGE_KEYS.perfil], initialProfile));
-      setEvolucaoCarga(parseJsonSafe(map[STORAGE_KEYS.evolucaoCarga], {}));
-      setTreinoEmAndamento(
-        parseJsonSafe(map[STORAGE_KEYS.treinoEmAndamento], null),
-      );
-      setStreak(Number(parseJsonSafe(map[STORAGE_KEYS.streak], 0)) || 0);
-      setLembreteAtivo(
-        Boolean(parseJsonSafe(map[STORAGE_KEYS.lembreteAtivo], false)),
-      );
-      setLembreteId(parseJsonSafe(map[STORAGE_KEYS.lembreteId], null));
-    } finally {
-      hydratedRef.current = true;
-      setDataLoading(false);
-    }
+  function applyState(nextState) {
+    setTreinos(nextState.treinos);
+    setHistorico(nextState.historico);
+    setPerfil(nextState.perfil);
+    setEvolucaoCarga(nextState.evolucaoCarga);
+    setTreinoEmAndamento(nextState.treinoEmAndamento);
+    setStreak(nextState.streak);
+    setLembreteAtivo(nextState.lembreteAtivo);
+    setLembreteId(nextState.lembreteId);
   }
 
   async function persistLocalData(nextState = null) {
+    if (!user?.uid) return;
+
+    const keys = getUserStorageKeys(user.uid);
+
     const state = nextState || {
       treinos,
       historico,
@@ -184,21 +203,36 @@ export function AppDataProvider({ children }) {
     };
 
     await AsyncStorage.multiSet([
-      [STORAGE_KEYS.treinos, JSON.stringify(state.treinos)],
-      [STORAGE_KEYS.historico, JSON.stringify(state.historico)],
-      [STORAGE_KEYS.perfil, JSON.stringify(state.perfil)],
-      [STORAGE_KEYS.evolucaoCarga, JSON.stringify(state.evolucaoCarga)],
-      [STORAGE_KEYS.treinoEmAndamento, JSON.stringify(state.treinoEmAndamento)],
-      [STORAGE_KEYS.streak, JSON.stringify(state.streak)],
-      [STORAGE_KEYS.lembreteAtivo, JSON.stringify(state.lembreteAtivo)],
-      [STORAGE_KEYS.lembreteId, JSON.stringify(state.lembreteId)],
+      [keys.treinos, JSON.stringify(state.treinos)],
+      [keys.historico, JSON.stringify(state.historico)],
+      [keys.perfil, JSON.stringify(state.perfil)],
+      [keys.evolucaoCarga, JSON.stringify(state.evolucaoCarga)],
+      [keys.treinoEmAndamento, JSON.stringify(state.treinoEmAndamento)],
+      [keys.streak, JSON.stringify(state.streak)],
+      [keys.lembreteAtivo, JSON.stringify(state.lembreteAtivo)],
+      [keys.lembreteId, JSON.stringify(state.lembreteId)],
     ]);
   }
 
+  async function loadLocalDataForUser(uid) {
+    if (!uid) {
+      applyState(initialState);
+      return;
+    }
+
+    const keys = getUserStorageKeys(uid);
+    const results = await AsyncStorage.multiGet(Object.values(keys));
+    const map = Object.fromEntries(results);
+    const nextState = buildStateFromStorageMap(map, keys);
+
+    applyState(nextState);
+  }
+
   async function syncCloudNow() {
-    if (!user?.uid) return;
+    if (!user?.uid || !hydratedRef.current) return;
 
     setSyncingCloud(true);
+
     try {
       const payload = {
         uid: user.uid,
@@ -223,9 +257,16 @@ export function AppDataProvider({ children }) {
   }
 
   function scheduleCloudSync() {
-    if (cloudTimerRef.current) clearTimeout(cloudTimerRef.current);
+    if (!user?.uid || !hydratedRef.current) return;
+
+    if (cloudTimerRef.current) {
+      clearTimeout(cloudTimerRef.current);
+    }
+
     cloudTimerRef.current = setTimeout(() => {
-      syncCloudNow();
+      syncCloudNow().catch((error) =>
+        console.log("Erro ao sincronizar com a nuvem:", error),
+      );
     }, 800);
   }
 
@@ -233,39 +274,85 @@ export function AppDataProvider({ children }) {
     if (!user?.uid) return;
 
     const snapshot = await getDoc(doc(db, "dailygym_users", user.uid));
-    if (!snapshot.exists()) return;
+
+    if (!snapshot.exists()) {
+      await persistLocalData();
+      return;
+    }
 
     const cloudData = snapshot.data();
-    const nextState = {
-      treinos: normalizeWorkouts(cloudData?.treinos || []),
-      historico: normalizeHistory(cloudData?.historico || []),
-      perfil: cloudData?.perfil || initialProfile,
-      evolucaoCarga: cloudData?.evolucaoCarga || {},
-      treinoEmAndamento: cloudData?.treinoEmAndamento || null,
-      streak: Number(cloudData?.streak) || 0,
-      lembreteAtivo: Boolean(cloudData?.lembreteAtivo),
-      lembreteId: cloudData?.lembreteId || null,
-    };
+    const nextState = buildStateFromCloud(cloudData);
 
-    setTreinos(nextState.treinos);
-    setHistorico(nextState.historico);
-    setPerfil(nextState.perfil);
-    setEvolucaoCarga(nextState.evolucaoCarga);
-    setTreinoEmAndamento(nextState.treinoEmAndamento);
-    setStreak(nextState.streak);
-    setLembreteAtivo(nextState.lembreteAtivo);
-    setLembreteId(nextState.lembreteId);
-
+    applyState(nextState);
     await persistLocalData(nextState);
   }
 
   useEffect(() => {
-    if (!hydratedRef.current) return;
+    let isMounted = true;
+
+    async function bootUserData() {
+      setDataLoading(true);
+      hydratedRef.current = false;
+
+      if (cloudTimerRef.current) {
+        clearTimeout(cloudTimerRef.current);
+      }
+
+      try {
+        if (!user?.uid) {
+          activeUidRef.current = null;
+          applyState(initialState);
+          return;
+        }
+
+        activeUidRef.current = user.uid;
+
+        await loadLocalDataForUser(user.uid);
+
+        if (!isMounted || activeUidRef.current !== user.uid) return;
+
+        const snapshot = await getDoc(doc(db, "dailygym_users", user.uid));
+
+        if (!isMounted || activeUidRef.current !== user.uid) return;
+
+        if (snapshot.exists()) {
+          const cloudState = buildStateFromCloud(snapshot.data());
+          applyState(cloudState);
+          await persistLocalData(cloudState);
+        }
+      } catch (error) {
+        console.log("Erro ao carregar dados do usuário:", error);
+      } finally {
+        if (isMounted) {
+          hydratedRef.current = true;
+          setDataLoading(false);
+        }
+      }
+    }
+
+    bootUserData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user?.uid]);
+
+  useEffect(() => {
+    if (!hydratedRef.current || !user?.uid) return;
 
     persistLocalData().catch((error) =>
       console.log("Erro ao salvar localmente:", error),
     );
+
+    scheduleCloudSync();
+
+    return () => {
+      if (cloudTimerRef.current) {
+        clearTimeout(cloudTimerRef.current);
+      }
+    };
   }, [
+    user?.uid,
     treinos,
     historico,
     perfil,
@@ -275,14 +362,6 @@ export function AppDataProvider({ children }) {
     lembreteAtivo,
     lembreteId,
   ]);
-
-  useEffect(() => {
-    if (!user?.uid) return;
-
-    hydrateFromCloud().catch((error) =>
-      console.log("Erro ao carregar da nuvem:", error),
-    );
-  }, [user?.uid]);
 
   async function enableReminder() {
     const permission = await Notifications.requestPermissionsAsync();
@@ -315,6 +394,7 @@ export function AppDataProvider({ children }) {
     if (lembreteId) {
       await Notifications.cancelScheduledNotificationAsync(lembreteId);
     }
+
     setLembreteId(null);
     setLembreteAtivo(false);
   }
@@ -337,12 +417,14 @@ export function AppDataProvider({ children }) {
       if (prev?.treino?.id === updatedWorkout.id) {
         return { ...prev, treino: updatedWorkout };
       }
+
       return prev;
     });
   }, []);
 
   const deleteWorkout = useCallback((id) => {
     setTreinos((prev) => prev.filter((item) => item.id !== id));
+
     setTreinoEmAndamento((prev) => {
       if (prev?.treino?.id === id) return null;
       return prev;
@@ -355,7 +437,9 @@ export function AppDataProvider({ children }) {
 
   const updateExerciseLoad = useCallback((exerciseName, newLoad) => {
     if (!exerciseName) return;
+
     const loadNumber = Number(newLoad);
+
     if (Number.isNaN(loadNumber) || loadNumber <= 0) return;
 
     setEvolucaoCarga((prev) => {
@@ -393,6 +477,7 @@ export function AppDataProvider({ children }) {
     }
 
     const lastRecordDate = parseWorkoutDate(historico[0]);
+
     if (!lastRecordDate) {
       setStreak(1);
       return;
@@ -451,6 +536,7 @@ export function AppDataProvider({ children }) {
     return historico.reduce((total, item) => {
       const parts = String(item.seriesFeitas || "0/0").split("/");
       const completed = Number(parts[0]) || 0;
+
       return total + completed;
     }, 0);
   }, [historico]);
@@ -464,9 +550,14 @@ export function AppDataProvider({ children }) {
 
     historico.forEach((item) => {
       const parsed = parseWorkoutDate(item);
+
       if (!parsed) return;
+
       const day = toStartOfDay(parsed);
-      if (day >= weekStart) trainedDays.add(day.getDay());
+
+      if (day >= weekStart) {
+        trainedDays.add(day.getDay());
+      }
     });
 
     return ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map(
@@ -482,6 +573,7 @@ export function AppDataProvider({ children }) {
   ).length;
 
   const metaSemanalNumero = Number(perfil.metaSemanal) || 0;
+
   const percentualMeta =
     metaSemanalNumero > 0
       ? Math.min((totalDiasTreinadosSemana / metaSemanalNumero) * 100, 100)
@@ -518,6 +610,7 @@ export function AppDataProvider({ children }) {
       percentualMeta,
       refreshCloudData: hydrateFromCloud,
       syncCloudNow,
+      storageKeys,
     }),
     [
       dataLoading,
@@ -545,6 +638,7 @@ export function AppDataProvider({ children }) {
       totalDiasTreinadosSemana,
       metaSemanalNumero,
       percentualMeta,
+      storageKeys,
     ],
   );
 
@@ -555,8 +649,10 @@ export function AppDataProvider({ children }) {
 
 export function useAppData() {
   const context = useContext(AppDataContext);
+
   if (!context) {
     throw new Error("useAppData deve ser usado dentro de AppDataProvider");
   }
+
   return context;
 }

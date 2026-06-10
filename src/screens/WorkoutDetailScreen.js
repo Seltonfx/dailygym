@@ -44,6 +44,8 @@ export default function WorkoutDetailScreen({
 
   const ultimoSalvamentoRef = useRef(0);
   const treinoFinalizadoRef = useRef(false);
+  const editandoCargaRef = useRef(false);
+  const carregouTreinoRef = useRef(false);
 
   function obterExercicioAtual() {
     return listaExercicios[exercicioAtual];
@@ -84,6 +86,8 @@ export default function WorkoutDetailScreen({
   }
 
   function atualizarCampoCargaAtual(indexAtual = exercicioAtual) {
+    if (editandoCargaRef.current) return;
+
     const item = listaExercicios[indexAtual];
     const nome = obterNomeExercicio(item);
     const cargaBase = obterCargaExercicio(item);
@@ -97,6 +101,12 @@ export default function WorkoutDetailScreen({
   }
 
   useEffect(() => {
+    carregouTreinoRef.current = false;
+  }, [treinoId]);
+
+  useEffect(() => {
+    if (carregouTreinoRef.current) return;
+
     const mesmoTreino =
       treinoEmAndamento?.treino?.id &&
       treinoId &&
@@ -125,11 +135,13 @@ export default function WorkoutDetailScreen({
       definirTempoExercicio(0);
       atualizarCampoCargaAtual(0);
     }
-  }, [treinoId, treinoEmAndamento, descanso]);
+
+    carregouTreinoRef.current = true;
+  }, [treinoId, descanso]);
 
   useEffect(() => {
     atualizarCampoCargaAtual();
-  }, [exercicioAtual, evolucaoCarga]);
+  }, [exercicioAtual]);
 
   useEffect(() => {
     if (!descansoAtivo || tempoRestanteDescanso <= 0) return;
@@ -216,6 +228,7 @@ export default function WorkoutDetailScreen({
     }
 
     onUpdateExerciseLoad?.(nome, cargaNumero);
+    editandoCargaRef.current = false;
   }
 
   function iniciarOuPausarTimerExercicio() {
@@ -377,6 +390,12 @@ export default function WorkoutDetailScreen({
             placeholderTextColor="#94a3b8"
             keyboardType="numeric"
             value={cargaAtualDigitada}
+            onFocus={() => {
+              editandoCargaRef.current = true;
+            }}
+            onBlur={() => {
+              editandoCargaRef.current = false;
+            }}
             onChangeText={setCargaAtualDigitada}
           />
 
